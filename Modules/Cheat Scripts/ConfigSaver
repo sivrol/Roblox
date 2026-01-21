@@ -1,0 +1,236 @@
+if _G.ConfigManager then
+    return _G.ConfigManager
+end
+local ConfigManager = {}
+_G.ConfigManager = ConfigManager
+
+local HttpService = game:GetService("HttpService")
+
+local RegisteredConfigs = {}
+local Toggled = true
+
+local function Color3ToTable(Color)
+    return {R = Color.R, G = Color.G, B = Color.B}
+end
+
+local function TableToColor3(Table)
+    return Color3.new(Table.R, Table.G, Table.B)
+end
+
+local function IsColor3Table(Table)
+    if type(Table) ~= "table" then
+        return false
+    end
+    local hasR = rawget(Table, "R") ~= nil
+    local hasG = rawget(Table, "G") ~= nil
+    local hasB = rawget(Table, "B") ~= nil
+    local hasValue = rawget(Table, "value") ~= nil
+    local hasMin = rawget(Table, "min") ~= nil
+    local hasMax = rawget(Table, "max") ~= nil
+    
+    return hasR and hasG and hasB and not hasValue and not hasMin and not hasMax
+end
+
+local function SerializeTable(Table)
+    local Data = {}
+    for K, V in pairs(Table) do
+        if typeof(V) == "Color3" then
+            Data[K] = Color3ToTable(V)
+        elseif type(V) == "table" then
+            Data[K] = SerializeTable(V)
+        else
+            Data[K] = V
+        end
+    end
+    return Data
+end
+
+local function DeserializeTable(ConfigData, Table)
+    for K, V in pairs(ConfigData) do
+        local success, result = pcall(function()
+            if IsColor3Table(V) then
+                local r = rawget(V, "R") or 0
+                local g = rawget(V, "G") or 0
+                local b = rawget(V, "B") or 0
+                Table[K] = Color3.fromRGB(r * 255, g * 255, b * 255)
+            elseif type(V) == "table" then
+                if type(Table[K]) == "table" then
+                    DeserializeTable(V, Table[K])
+                else
+                    local nestedTable = {}
+                    DeserializeTable(V, nestedTable)
+                    Table[K] = nestedTable
+                end
+            else
+                Table[K] = V
+            end
+        end)
+        if not success then
+            warn("ConfigManager - Error deserializing key '" .. tostring(K) .. "': " .. tostring(result))
+        end
+    end
+end
+
+local function Register(ConfigName, ConfigTable, ConfigPath)
+    local path = ConfigPath or (ConfigName .. ".json")
+    RegisteredConfigs[ConfigName] = {
+        Name = ConfigName,
+        Table = ConfigTable,
+        Path = path
+    }
+    if not isfile(path) then
+        local data = SerializeTable(ConfigTable)
+        local json = HttpService:JSONEncode(data)
+        writefile(path, json)
+    end
+    return true
+end
+
+local function Unregister(ConfigName)
+    if RegisteredConfigs[ConfigName] then
+        RegisteredConfigs[ConfigName] = nil
+        return true
+    end
+    return false
+end
+
+local function SaveConfig(ConfigName)
+    if not Toggled then return end
+    local Config = RegisteredConfigs[ConfigName]
+    if not Config then warn("ConfigManager - No config registered with name '" .. tostring(ConfigName) .. "'") return false end
+    local Success, Result = pcall(function()
+        local Data = SerializeTable(Config.Table)
+        local JsonData = HttpService:JSONEncode(Data)
+        writefile(Config.Path, JsonData)
+    end)
+    if not Success then warn("ConfigManager - " .. Config.Name .. " save failed: " .. tostring(Result)) return false end
+    return true
+end
+
+local function LoadConfig(ConfigName)
+    local Config = RegisteredConfigs[ConfigName]
+    if not Config then warn("ConfigManager - No config registered with name '" .. tostring(ConfigName) .. "'") return false end
+    if not isfile(Config.Path) then warn("ConfigManager - No " .. Config.Name .. " file found at " .. Config.Path) return false end
+    local Success, Result = pcall(function()
+        local JsonData = readfile(Config.Path)
+        local Data = HttpService:JSONDecode(JsonData)
+        DeserializeTable(Data, Config.Table)
+    end)
+    if not Success then warn("ConfigManager - " .. Config.Name .. " load failed: " .. tostring(Result)) return false end
+    return true
+end
+
+local function SaveAll()
+    local results = {}
+    for Name, _ in pairs(RegisteredConfigs) do
+        results[Name] = SaveConfig(Name)
+    end
+    return results
+end
+
+local function LoadAllConfigs()
+    local results = {}
+    for Name, _ in pairs(RegisteredConfigs) do
+        results[Name] = LoadConfig(Name)
+    end
+    return results
+end
+
+local function GetRegisteredConfigs()
+    local names = {}
+    for Name, _ in pairs(RegisteredConfigs) do
+        table.insert(names, Name)
+    end
+    return names
+end
+
+local function IsConfigRegistered(ConfigName)
+    return RegisteredConfigs[ConfigName] ~= nil
+end
+
+local function Toggle(Bool)
+    Toggled = Bool
+end
+
+local function GetConfigInfo(ConfigName)
+    local Config = RegisteredConfigs[ConfigName]
+    if not Config then return nil end
+    return {
+        Name = Config.Name,
+        Path = Config.Path,
+        Table = Config.Table
+    }
+end
+
+local function SaveConfigSlot(ConfigName, SlotNumber, FolderName)
+    local Config = RegisteredConfigs[ConfigName]
+    if not Config then warn("ConfigManager - No config registered with name '" .. tostring(ConfigName) .. "'") return false end
+    
+    local slotPath = FolderName .. "/Slot_" .. tostring(SlotNumber) .. ".json"
+    
+    local Success, Result = pcall(function()
+        local Data = SerializeTable(Config.Table)
+        local JsonData = HttpService:JSONEncode(Data)
+        writefile(slotPath, JsonData)
+    end)
+    
+    if not Success then warn("ConfigManager - Slot " .. SlotNumber .. " save failed: " .. tostring(Result)) return false end
+    return true
+end
+
+local function LoadConfigSlot(ConfigName, SlotNumber, FolderName)
+    local Config = RegisteredConfigs[ConfigName]
+    if not Config then warn("ConfigManager - No config registered with name '" .. tostring(ConfigName) .. "'") return false end
+    
+    local slotPath = FolderName .. "/Slot_" .. tostring(SlotNumber) .. ".json"
+    
+    if not isfile(slotPath) then warn("ConfigManager - No slot file found at " .. slotPath) return false end
+    
+    local Success, Result = pcall(function()
+        local JsonData = readfile(slotPath)
+        local Data = HttpService:JSONDecode(JsonData)
+        DeserializeTable(Data, Config.Table)
+    end)
+    
+    if not Success then warn("ConfigManager - Slot " .. SlotNumber .. " load failed: " .. tostring(Result)) return false end
+    return true
+end
+
+local function GetConfigSlots(FolderName)
+    if not isfolder(FolderName) then return {} end
+    
+    local slots = {}
+    for i = 1, 10 do
+        local slotPath = FolderName .. "/Slot_" .. tostring(i) .. ".json"
+        if isfile(slotPath) then
+            table.insert(slots, i)
+        end
+    end
+    return slots
+end
+
+local function DeleteConfigSlot(SlotNumber, FolderName)
+    local slotPath = FolderName .. "/Slot_" .. tostring(SlotNumber) .. ".json"
+    if isfile(slotPath) then
+        delfile(slotPath)
+        return true
+    end
+    return false
+end
+
+ConfigManager.Register = Register
+ConfigManager.Unregister = Unregister
+ConfigManager.SaveConfig = SaveConfig
+ConfigManager.LoadConfig = LoadConfig
+ConfigManager.SaveAll = SaveAll
+ConfigManager.LoadAllConfigs = LoadAllConfigs
+ConfigManager.GetRegisteredConfigs = GetRegisteredConfigs
+ConfigManager.IsConfigRegistered = IsConfigRegistered
+ConfigManager.GetConfigInfo = GetConfigInfo
+ConfigManager.Toggle = Toggle
+ConfigManager.SaveConfigSlot = SaveConfigSlot
+ConfigManager.LoadConfigSlot = LoadConfigSlot
+ConfigManager.GetConfigSlots = GetConfigSlots
+ConfigManager.DeleteConfigSlot = DeleteConfigSlot
+
+return ConfigManager
