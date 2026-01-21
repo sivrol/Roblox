@@ -1,0 +1,53 @@
+local TimedLoopModule = {}
+
+local ActiveLoops = {}
+
+TimedLoopModule.Destroy = function()
+    table.clear(ActiveLoops)
+end
+
+TimedLoopModule.BindToLoop = function(name, paused, interval, callback)
+    local LastCallTime = 0
+    table.insert(ActiveLoops, {Name = name, Last = LastCallTime, Interval = interval, IsPaused = paused, Function = callback})
+end
+
+TimedLoopModule.EditLoop = function(name, paused, interval, callback)
+    for _, loop in ipairs(ActiveLoops) do
+        if loop.Name == name then
+            if interval then loop.Interval = interval end
+            if callback then loop.Function = callback end
+            if paused ~= nil then loop.IsPaused = paused end
+            break
+        end
+    end
+end
+
+TimedLoopModule.UnbindFromLoop = function(name)
+    for _, loop in ipairs(ActiveLoops) do
+        if loop.Name == name then
+            table.remove(ActiveLoops, _)
+            break
+        end
+    end
+end
+
+TimedLoopModule.TogglePauseLoop = function(name, paused)
+    for _, loop in ipairs(ActiveLoops) do
+        if loop.Name == name then
+            loop.IsPaused = paused
+            break
+        end
+    end
+end
+
+game:GetService("RunService").Heartbeat:Connect(function()
+    local CurrentTime = tick()
+    for _, loop in ipairs(ActiveLoops) do
+        if CurrentTime - loop.Last >= loop.Interval and not loop.IsPaused then
+            loop.Function()
+            loop.Last = CurrentTime
+        end
+    end
+end)
+
+return TimedLoopModule
