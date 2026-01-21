@@ -1,0 +1,624 @@
+local MODULE_KEY = "Stack_NotificationsLibrary"
+local existingInstance = _G[MODULE_KEY] ~= nil
+
+local TWEEN_DURATION = 0.3
+local FADE_OUT_X_POSITION = 1
+local FADE_OUT_OFFSET = 20
+
+local function Init()
+	local Players = game:GetService("Players")
+	local TweenService = game:GetService("TweenService")
+	local VRService = game:GetService("VRService")
+	local RunService = game:GetService("RunService")
+	local UserInputService = game:GetService("UserInputService")
+	local TextService = game:GetService("TextService")
+
+	local localPlayer = Players.LocalPlayer
+	if not localPlayer then
+		return nil
+	end
+
+	local rootGui = RunService:IsStudio() and localPlayer:FindFirstChildOfClass("PlayerGui") or game:GetService("CoreGui")
+	if not rootGui then
+		return nil
+	end
+
+	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+	if not character then
+		return nil
+	end
+
+	local head = character:FindFirstChild("Head")
+
+	local settings = {
+		MaxNotifications = 5,
+		Cooldown = 8,
+		MessageLifetime = 4,
+		SizePC = UDim2.new(0, 250, 0, 60),
+		SizeVR = Vector3.new(2, 1, 0.1),
+		TextColor = Color3.fromRGB(255, 255, 255),
+		Font = Enum.Font.Code,
+		TextSizePC = 28,
+		TextSizeVR = 30.47,
+		SpacingPC = 8,
+		SpacingVR = 0.75,
+		VROffset = Vector3.new(0, 1.06, 3),
+		Enabled = true,
+	}
+
+	local theme = {
+		Toast = {
+			Bg = Color3.fromRGB(18, 18, 18),
+			Stroke = Color3.fromRGB(28, 28, 28),
+			Title = Color3.fromRGB(235, 235, 235),
+			Desc = Color3.fromRGB(200, 200, 200),
+			Corner = 8,
+			Padding = 12,
+			Spacing = 4,
+			MinWidth = 240,
+			MaxWidth = 520,
+		},
+		Prompt = {
+			DimTransparency = 0.5,
+			Corner = 10,
+			Bg = Color3.fromRGB(20, 20, 20),
+			Stroke = Color3.fromRGB(35, 35, 35),
+			Title = Color3.fromRGB(220, 220, 220),
+			Body = Color3.fromRGB(170, 170, 170),
+			YesBg = Color3.fromRGB(180, 60, 60),
+			YesHover = Color3.fromRGB(200, 70, 70),
+			NoBg = Color3.fromRGB(40, 40, 40),
+			NoHover = Color3.fromRGB(55, 55, 55),
+			YesText = Color3.fromRGB(255, 255, 255),
+			NoText = Color3.fromRGB(200, 200, 200),
+		},
+		Shadow = {
+			Asset = "rbxassetid://6015897843",
+			Transparency = 0.55,
+			Inset = 44,
+			SliceCenter = Rect.new(49, 49, 450, 450),
+		},
+	}
+
+	local function tween(obj, props, duration, style, direction)
+		if not obj then return nil end
+		return TweenService:Create(
+			obj,
+			TweenInfo.new(duration or 0.2, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out),
+			props
+		)
+	end
+
+	local function corner(parent, radius)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, radius or 8)
+		c.Parent = parent
+		return c
+	end
+
+	local function stroke(parent, color, thickness, transparency)
+		local s = Instance.new("UIStroke")
+		s.Color = color or Color3.fromRGB(60, 60, 60)
+		s.Thickness = thickness or 1
+		s.Transparency = transparency or 0
+		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		s.Parent = parent
+		return s
+	end
+
+	local function setFontFaceIfAvailable(textObj, assetId, weight, style)
+		if not textObj then return end
+		local ok, fontFace = pcall(function()
+			return Font.new(assetId, weight or Enum.FontWeight.SemiBold, style or Enum.FontStyle.Normal)
+		end)
+		if ok and fontFace then
+			pcall(function()
+				textObj.FontFace = fontFace
+			end)
+		end
+	end
+
+	local function measureWidth(text, font, textSize)
+		local size = TextService:GetTextSize(tostring(text or ""), textSize, font, Vector2.new(10000, 1000))
+		return size.X
+	end
+
+	local pcGui, pcFrame
+	local vrPart, vrGui, vrText
+	local vrEnabled = false
+	local vrErrorReason = ""
+	local vrErrorNotified = false
+	local vrUpdateBound = false
+
+	local state = {
+		queue = {}, -- VR lines
+		lastSend = 0,
+		activeCount = 0,
+		promptOpen = false,
+	}
+
+	do
+		local ok = pcall(function()
+			pcGui = Instance.new("ScreenGui")
+			pcGui.IgnoreGuiInset = true
+			pcGui.ResetOnSpawn = false
+			pcGui.Name = "StackNotifications"
+			pcGui.Parent = rootGui
+
+			pcFrame = Instance.new("Frame")
+			pcFrame.BackgroundTransparency = 1
+			pcFrame.Size = UDim2.new(0, 320, 0, 300 + 70 * settings.MaxNotifications)
+			pcFrame.AnchorPoint = Vector2.new(1, 1)
+			pcFrame.Position = UDim2.new(0.98, 0, 0.98, 0)
+			pcFrame.Parent = pcGui
+
+			local layout = Instance.new("UIListLayout")
+			layout.Padding = UDim.new(0, settings.SpacingPC)
+			layout.SortOrder = Enum.SortOrder.LayoutOrder
+			layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+			layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+			layout.Parent = pcFrame
+		end)
+		if not ok then
+			return nil
+		end
+	end
+
+	local function updateVR()
+		local now = tick()
+		local lifetime = settings.MessageLifetime
+		local maxNotifs = settings.MaxNotifications
+
+		for i = #state.queue, 1, -1 do
+			local entry = state.queue[i]
+			if entry and (now - entry.time > lifetime) then
+				table.remove(state.queue, i)
+				state.activeCount -= 1
+			end
+		end
+
+		while #state.queue > maxNotifs do
+			table.remove(state.queue, 1)
+			state.activeCount -= 1
+		end
+
+		if not vrText then
+			return
+		end
+
+		if not settings.Enabled or #state.queue == 0 then
+			vrText.Visible = false
+			return
+		end
+
+		local lines = table.create(#state.queue)
+		for i, entry in ipairs(state.queue) do
+			lines[i] = entry.text
+		end
+
+		vrText.Text = table.concat(lines, "\n")
+		vrText.Visible = true
+	end
+
+	if VRService.VREnabled and head then
+		local ok, err = pcall(function()
+			vrPart = Instance.new("Part")
+			vrPart.Anchored = false
+			vrPart.CanCollide = false
+			vrPart.CanQuery = false
+			vrPart.CanTouch = false
+			vrPart.Massless = true
+			vrPart.Transparency = 1
+			vrPart.Size = settings.SizeVR
+			vrPart.Parent = workspace
+
+			vrGui = Instance.new("SurfaceGui")
+			vrGui.Face = Enum.NormalId.Back
+			vrGui.Adornee = vrPart
+			vrGui.AlwaysOnTop = true
+			vrGui.Parent = vrPart
+
+			vrText = Instance.new("TextLabel")
+			vrText.BackgroundTransparency = 1
+			vrText.TextColor3 = settings.TextColor
+			vrText.Font = settings.Font
+			vrText.TextSize = settings.TextSizeVR
+			vrText.Size = UDim2.new(1, 0, 1, 0)
+			vrText.TextYAlignment = Enum.TextYAlignment.Top
+			vrText.Visible = false
+			vrText.Parent = vrGui
+
+			vrPart.CFrame = head.CFrame * CFrame.new(settings.VROffset)
+			local weld = Instance.new("Weld")
+			weld.Name = "NotifWeld"
+			weld.Part0 = head
+			weld.Part1 = vrPart
+			weld.C1 = CFrame.new(0, settings.SpacingVR, 1)
+			weld.Parent = vrPart
+			vrPart.CFrame = CFrame.new(vrPart.Position, head.Position)
+
+			vrEnabled = true
+		end)
+		if not ok then
+			vrErrorReason = tostring(err or "VR setup failed")
+			vrEnabled = false
+		end
+	elseif VRService.VREnabled and not head then
+		vrErrorReason = "Local head not found"
+		vrEnabled = false
+	end
+
+	local function waitCooldown()
+		local elapsed = tick() - state.lastSend
+		if elapsed < settings.Cooldown then
+			local waitTime = settings.Cooldown - elapsed
+			task.wait(waitTime)
+		end
+	end
+
+	local function markSent()
+		state.lastSend = tick()
+		state.activeCount += 1
+	end
+
+	local function sendToast(message, titleText)
+		if not settings.Enabled then return end
+		if not pcFrame then return end
+		if VRService.VREnabled and vrEnabled then return end
+		if state.activeCount >= settings.MaxNotifications then return end
+		waitCooldown()
+
+		local title = titleText or "Notification"
+		local body = message or ""
+
+		local padding = theme.Toast.Padding
+		local minWidth = theme.Toast.MinWidth
+		local maxWidth = theme.Toast.MaxWidth
+		local spacing = theme.Toast.Spacing
+
+		local titleWidth = measureWidth(title, Enum.Font.GothamSemibold, 15)
+		local bodyWidth = measureWidth(body, Enum.Font.Gotham, 13)
+		local contentWidth = math.clamp(math.max(titleWidth, bodyWidth) + 2, minWidth, maxWidth)
+
+		local notif = Instance.new("Frame")
+		notif.Name = "Notif"
+		notif.BackgroundColor3 = theme.Toast.Bg
+		notif.BackgroundTransparency = (_G[MODULE_KEY] and _G[MODULE_KEY].Acrylic) and 0.25 or 0
+		notif.BorderSizePixel = 0
+		notif.Size = UDim2.new(0, contentWidth + padding * 2, 0, 52)
+		notif.Parent = pcFrame
+		corner(notif, theme.Toast.Corner)
+		stroke(notif, theme.Toast.Stroke, 1, 0)
+
+		local shadow = Instance.new("ImageLabel")
+		shadow.Name = "Shadow"
+		shadow.BackgroundTransparency = 1
+		shadow.BorderSizePixel = 0
+		shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+		shadow.Position = UDim2.new(0.5, 0, 0.5, 0)
+		shadow.Size = UDim2.new(1, theme.Shadow.Inset, 1, theme.Shadow.Inset)
+		shadow.ZIndex = -1
+		shadow.Image = theme.Shadow.Asset
+		shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+		shadow.ImageTransparency = theme.Shadow.Transparency
+		shadow.ScaleType = Enum.ScaleType.Slice
+		shadow.SliceCenter = theme.Shadow.SliceCenter
+		shadow.Parent = notif
+
+		local content = Instance.new("Frame")
+		content.Name = "Content"
+		content.BackgroundTransparency = 1
+		content.Position = UDim2.new(0, padding, 0, padding)
+		content.Size = UDim2.new(0, contentWidth, 0, 0)
+		content.Parent = notif
+
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, spacing)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.FillDirection = Enum.FillDirection.Vertical
+		layout.Parent = content
+
+		local titleLabel = Instance.new("TextLabel")
+		titleLabel.Name = "Title"
+		titleLabel.BackgroundTransparency = 1
+		titleLabel.BorderSizePixel = 0
+		titleLabel.Size = UDim2.new(1, 0, 0, 0)
+		titleLabel.AutomaticSize = Enum.AutomaticSize.Y
+		titleLabel.Font = Enum.Font.GothamSemibold
+		titleLabel.Text = title
+		titleLabel.TextColor3 = theme.Toast.Title
+		titleLabel.TextSize = 15
+		titleLabel.TextWrapped = true
+		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		titleLabel.Parent = content
+
+		local bodyLabel = Instance.new("TextLabel")
+		bodyLabel.Name = "Description"
+		bodyLabel.BackgroundTransparency = 1
+		bodyLabel.BorderSizePixel = 0
+		bodyLabel.Size = UDim2.new(1, 0, 0, 0)
+		bodyLabel.AutomaticSize = Enum.AutomaticSize.Y
+		bodyLabel.Font = Enum.Font.Gotham
+		bodyLabel.Text = body
+		bodyLabel.TextColor3 = theme.Toast.Desc
+		bodyLabel.TextSize = 13
+		bodyLabel.TextWrapped = true
+		bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
+		bodyLabel.Parent = content
+
+		setFontFaceIfAvailable(titleLabel, "rbxassetid://12187365364", Enum.FontWeight.SemiBold)
+		setFontFaceIfAvailable(bodyLabel, "rbxassetid://12187365364", Enum.FontWeight.SemiBold)
+
+		RunService.Heartbeat:Wait()
+		notif.Size = UDim2.new(0, contentWidth + padding * 2, 0, layout.AbsoluteContentSize.Y + padding * 2)
+
+		markSent()
+
+		task.delay(settings.MessageLifetime, function()
+			if notif.Parent then
+				tween(notif, { Position = UDim2.new(FADE_OUT_X_POSITION, FADE_OUT_OFFSET, 0, 0), BackgroundTransparency = 1 }, TWEEN_DURATION, Enum.EasingStyle.Quart):Play()
+				tween(titleLabel, { TextTransparency = 1 }, TWEEN_DURATION, Enum.EasingStyle.Quart):Play()
+				tween(bodyLabel, { TextTransparency = 1 }, TWEEN_DURATION, Enum.EasingStyle.Quart):Play()
+				tween(shadow, { ImageTransparency = 1 }, TWEEN_DURATION, Enum.EasingStyle.Quart):Play()
+				task.wait(TWEEN_DURATION)
+				if notif then notif:Destroy() end
+				state.activeCount -= 1
+			end
+		end)
+	end
+
+	local function sendYesNoPrompt(message, titleText)
+		if not settings.Enabled then return function() return "Unanswered" end end
+		if VRService.VREnabled and vrEnabled then return function() return "Unanswered" end end
+		if not pcGui then return function() return "Unanswered" end end
+		if state.promptOpen then return function() return "Unanswered" end end
+		state.promptOpen = true
+
+		local responded = false
+		local response = "Unanswered"
+		local inputConn = nil
+
+		local function finish(finalResponse)
+			if responded then return end
+			responded = true
+			response = finalResponse or "Unanswered"
+			state.promptOpen = false
+			if inputConn then
+				inputConn:Disconnect()
+				inputConn = nil
+			end
+		end
+
+		local overlay = Instance.new("Frame")
+		overlay.Name = "Overlay"
+		overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		overlay.BackgroundTransparency = 1
+		overlay.BorderSizePixel = 0
+		overlay.Size = UDim2.new(1, 0, 1, 0)
+		overlay.ZIndex = 100
+		overlay.Parent = pcGui
+
+		local box = Instance.new("Frame")
+		box.Name = "Prompt"
+		box.AnchorPoint = Vector2.new(0.5, 0.5)
+		box.Position = UDim2.new(0.5, 0, 0.5, 0)
+		box.Size = UDim2.new(0, 280, 0, 120)
+		box.BackgroundColor3 = theme.Prompt.Bg
+		box.BackgroundTransparency = 1
+		box.BorderSizePixel = 0
+		box.ZIndex = 101
+		box.Parent = overlay
+		corner(box, theme.Prompt.Corner)
+		local boxStroke = stroke(box, theme.Prompt.Stroke, 1, 1)
+
+		local header = Instance.new("TextLabel")
+		header.BackgroundTransparency = 1
+		header.BorderSizePixel = 0
+		header.Position = UDim2.new(0, 0, 0, 18)
+		header.Size = UDim2.new(1, 0, 0, 24)
+		header.Font = Enum.Font.GothamSemibold
+		header.Text = titleText or "Are you sure?"
+		header.TextColor3 = theme.Prompt.Title
+		header.TextSize = 16
+		header.TextTransparency = 1
+		header.TextWrapped = true
+		header.ZIndex = 102
+		header.Parent = box
+		setFontFaceIfAvailable(header, "rbxassetid://12187365364", Enum.FontWeight.SemiBold)
+
+		local body = Instance.new("TextLabel")
+		body.BackgroundTransparency = 1
+		body.BorderSizePixel = 0
+		body.Position = UDim2.new(0, 18, 0, 44)
+		body.Size = UDim2.new(1, -36, 0, 18)
+		body.Font = Enum.Font.Gotham
+		body.Text = message or ""
+		body.TextColor3 = theme.Prompt.Body
+		body.TextSize = 13
+		body.TextTransparency = 1
+		body.TextWrapped = true
+		body.ZIndex = 102
+		body.Parent = box
+		setFontFaceIfAvailable(body, "rbxassetid://12187365364", Enum.FontWeight.SemiBold)
+
+		local buttons = Instance.new("Frame")
+		buttons.BackgroundTransparency = 1
+		buttons.BorderSizePixel = 0
+		buttons.Position = UDim2.new(0, 20, 0, 76)
+		buttons.Size = UDim2.new(1, -40, 0, 40)
+		buttons.ZIndex = 102
+		buttons.Parent = box
+
+		local layout = Instance.new("UIListLayout")
+		layout.FillDirection = Enum.FillDirection.Horizontal
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.Padding = UDim.new(0, 16)
+		layout.Parent = buttons
+
+		local yesButton = Instance.new("TextButton")
+		yesButton.AutoButtonColor = false
+		yesButton.BackgroundColor3 = theme.Prompt.YesBg
+		yesButton.BackgroundTransparency = 1
+		yesButton.BorderSizePixel = 0
+		yesButton.Size = UDim2.new(0, 110, 0, 34)
+		yesButton.Text = "Yes"
+		yesButton.TextColor3 = theme.Prompt.YesText
+		yesButton.TextSize = 14
+		yesButton.TextTransparency = 1
+		yesButton.Font = Enum.Font.GothamSemibold
+		yesButton.ZIndex = 103
+		yesButton.Parent = buttons
+		corner(yesButton, 8)
+		setFontFaceIfAvailable(yesButton, "rbxassetid://12187365364", Enum.FontWeight.SemiBold)
+
+		local noButton = Instance.new("TextButton")
+		noButton.AutoButtonColor = false
+		noButton.BackgroundColor3 = theme.Prompt.NoBg
+		noButton.BackgroundTransparency = 1
+		noButton.BorderSizePixel = 0
+		noButton.Size = UDim2.new(0, 110, 0, 34)
+		noButton.Text = "No"
+		noButton.TextColor3 = theme.Prompt.NoText
+		noButton.TextSize = 14
+		noButton.TextTransparency = 1
+		noButton.Font = Enum.Font.GothamSemibold
+		noButton.ZIndex = 103
+		noButton.Parent = buttons
+		corner(noButton, 8)
+		setFontFaceIfAvailable(noButton, "rbxassetid://12187365364", Enum.FontWeight.SemiBold)
+
+		local function animateOut()
+			tween(yesButton, { BackgroundTransparency = 1, TextTransparency = 1 }, 0.25):Play()
+			tween(noButton, { BackgroundTransparency = 1, TextTransparency = 1 }, 0.25):Play()
+			task.delay(0.05, function()
+				tween(header, { TextTransparency = 1 }, 0.25):Play()
+				tween(body, { TextTransparency = 1 }, 0.25):Play()
+			end)
+			task.delay(0.1, function()
+				tween(box, { BackgroundTransparency = 1, Size = UDim2.new(0, 280, 0, 120) }, 0.35, Enum.EasingStyle.Quart):Play()
+				tween(boxStroke, { Transparency = 1 }, 0.35, Enum.EasingStyle.Quart):Play()
+				tween(overlay, { BackgroundTransparency = 1 }, 0.35):Play()
+			end)
+			task.delay(0.5, function()
+				if overlay then overlay:Destroy() end
+			end)
+		end
+
+		local function dismiss(finalResponse)
+			if responded then return end
+			finish(finalResponse)
+			animateOut()
+		end
+
+		tween(overlay, { BackgroundTransparency = theme.Prompt.DimTransparency }, 0.35):Play()
+		tween(box, { BackgroundTransparency = 0, Size = UDim2.new(0, 300, 0, 130) }, 0.45, Enum.EasingStyle.Quart):Play()
+		tween(boxStroke, { Transparency = 0 }, 0.3):Play()
+		task.delay(0.08, function()
+			tween(header, { TextTransparency = 0 }, 0.35):Play()
+			tween(body, { TextTransparency = 0 }, 0.35):Play()
+		end)
+		task.delay(0.12, function()
+			tween(yesButton, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.3):Play()
+			tween(noButton, { BackgroundTransparency = 0, TextTransparency = 0 }, 0.3):Play()
+		end)
+
+		yesButton.MouseEnter:Connect(function()
+			tween(yesButton, { BackgroundColor3 = theme.Prompt.YesHover }, 0.12):Play()
+		end)
+		yesButton.MouseLeave:Connect(function()
+			tween(yesButton, { BackgroundColor3 = theme.Prompt.YesBg }, 0.12):Play()
+		end)
+		noButton.MouseEnter:Connect(function()
+			tween(noButton, { BackgroundColor3 = theme.Prompt.NoHover }, 0.12):Play()
+		end)
+		noButton.MouseLeave:Connect(function()
+			tween(noButton, { BackgroundColor3 = theme.Prompt.NoBg }, 0.12):Play()
+		end)
+
+		yesButton.MouseButton1Click:Connect(function()
+			dismiss("Yes")
+		end)
+		noButton.MouseButton1Click:Connect(function()
+			dismiss("No")
+		end)
+
+		inputConn = UserInputService.InputBegan:Connect(function(input, processed)
+			if processed then return end
+			if input.KeyCode == Enum.KeyCode.Escape then
+				dismiss("No")
+			end
+		end)
+
+		task.delay(settings.MessageLifetime, function()
+			if not responded then
+				dismiss("Unanswered")
+			end
+		end)
+
+		return function()
+			while not responded do
+				task.wait(0.05)
+			end
+			return response
+		end
+	end
+
+	local function sendVR(message, titleText)
+		if VRService.VREnabled and not vrEnabled then
+			if not vrErrorNotified then
+				vrErrorNotified = true
+				sendToast(vrErrorReason ~= "" and vrErrorReason or "VR setup failed", "Notification Launch Error")
+			end
+			sendToast(message, titleText)
+			return
+		end
+
+		if not (settings.Enabled and VRService.VREnabled and vrEnabled) then
+			return
+		end
+
+		waitCooldown()
+
+		state.lastSend = tick()
+		state.activeCount += 1
+		table.insert(state.queue, { text = message or "", time = tick() })
+
+		if not vrUpdateBound then
+			vrUpdateBound = true
+			RunService:BindToRenderStep("UpdateVRNotifications", 1, updateVR)
+		end
+
+		updateVR()
+	end
+
+	return {
+		SendNotification = function(message, titleText)
+			if VRService.VREnabled then
+				sendVR(message, titleText)
+			else
+				sendToast(message, titleText)
+			end
+		end,
+		SendYesNoNotification = function(message, titleText)
+			return sendYesNoPrompt(message, titleText)
+		end,
+		ClearNotifications = function()
+			if not pcFrame then return end
+			for _, child in ipairs(pcFrame:GetChildren()) do
+				if child:IsA("Frame") then
+					child:Destroy()
+				end
+			end
+		end,
+		GetNotificationSettings = function()
+			return settings
+		end,
+	}
+end
+
+if not existingInstance then
+	_G[MODULE_KEY] = Init()
+end
+
+return _G[MODULE_KEY]
