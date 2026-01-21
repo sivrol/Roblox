@@ -1,0 +1,20 @@
+--[[
+	Version: v3.0.0
+	Changelog (vs v2.7.7):
+	- Renamed menu: Photon -> Onyx (I have no idea how to name things)
+	- Added Item Selector (select/deselect items, select all, bring selected, refresh list)
+	- Added Item ESP (toggle, color, max distance)
+	- VR Aimbot improvements:
+		- Aim randomization reworked for more consistent offsets
+		- Added Min Distance (skip targets that are too close)
+		- Added Headshot Chance (head vs torso chance)
+		- Added Wall Check (skip targets behind walls but I don't think it works currently)
+		- Added optional “Performant Mode” (SphereCast instead of GetPartsInPart)
+	- PC aimbot / FOV circle improvements (uses GuiService inset correctly)
+	- Fullbright reworked to save performance
+	- Freeze Other Players now restores anchored parts
+	- Removed SpeedBoost 2
+	- Powerups changed to attachment/weld-based grabbing; removed Heal/Armor buttons (didn't work)
+	- ESP improved (more robust cleanup on unload)
+	- General stability: extra nil/function checks for modules + broader cleanup of leftover GUI/parts on unload
+]]
