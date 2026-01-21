@@ -1,0 +1,292 @@
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local utils = {}
+
+local tweenCache = {}
+local DEFAULT_TWEEN_DURATION = 0.2
+local DEFAULT_CORNER_RADIUS = 8
+local DEFAULT_STROKE_THICKNESS = 1
+
+utils.formatNumber = function(num)
+	if not tonumber(num) then return "0" end
+	local formatted = string.format("%.2f", num)
+	return formatted:gsub("%.?0+$", "")
+end
+
+utils.createCorner = function(parent, radius)
+	if not parent then return nil end
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius or DEFAULT_CORNER_RADIUS)
+	corner.Parent = parent
+	return corner
+end
+
+utils.createStroke = function(parent, color, thickness, transparency)
+	if not parent then return nil end
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color or Color3.fromRGB(60, 60, 60)
+	stroke.Thickness = thickness or DEFAULT_STROKE_THICKNESS
+	stroke.Transparency = transparency or 0
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = parent
+	return stroke
+end
+
+utils.tween = function(object, properties, duration, style, direction)
+	if not object or not properties then return nil end
+	duration = duration or DEFAULT_TWEEN_DURATION
+	style = style or Enum.EasingStyle.Quad
+	direction = direction or Enum.EasingDirection.Out
+	return TweenService:Create(object, TweenInfo.new(duration, style, direction), properties)
+end
+
+utils.tweenPlay = function(object, properties, duration, style)
+	local tween = utils.tween(object, properties, duration, style)
+	if tween then
+		tween:Play()
+	end
+	return tween
+end
+
+utils.quickTween = function(object, properties)
+	return utils.tweenPlay(object, properties, 0.15, Enum.EasingStyle.Quad)
+end
+
+utils.springTween = function(object, properties)
+	return utils.tweenPlay(object, properties, 0.3, Enum.EasingStyle.Back)
+end
+
+utils.createTextLabel = function(parent, props)
+	local label = Instance.new("TextLabel")
+	label.Size = props.size or UDim2.new(1, 0, 1, 0)
+	label.Position = props.position or UDim2.new(0, 0, 0, 0)
+	label.BackgroundTransparency = props.backgroundTransparency or 1
+	label.Text = props.text or ""
+	label.TextColor3 = props.textColor3 or Color3.new(1, 1, 1)
+	label.TextSize = props.textSize or 14
+	label.Font = props.font or Enum.Font.SourceSans
+	label.TextXAlignment = props.textXAlignment or Enum.TextXAlignment.Left
+	label.TextYAlignment = props.textYAlignment or Enum.TextYAlignment.Top
+	if props.cornerRadius then
+		utils.createCorner(label, props.cornerRadius)
+	end
+	if parent then
+		label.Parent = parent
+	end
+	return label
+end
+
+utils.createFrame = function(parent, props)
+	local frame = Instance.new("Frame")
+	frame.Size = props.size or UDim2.new(1, 0, 1, 0)
+	frame.Position = props.position or UDim2.new(0, 0, 0, 0)
+	frame.BackgroundColor3 = props.backgroundColor3 or Color3.fromRGB(30, 30, 30)
+	frame.BackgroundTransparency = props.backgroundTransparency or 0
+	frame.BorderSizePixel = props.borderSizePixel or 0
+	if props.cornerRadius then
+		utils.createCorner(frame, props.cornerRadius)
+	end
+	if props.stroke then
+		utils.createStroke(frame, props.stroke.color, props.stroke.thickness, props.stroke.transparency)
+	end
+	if parent then
+		frame.Parent = parent
+	end
+	return frame
+end
+
+utils.createButton = function(parent, props)
+	local button = Instance.new("TextButton")
+	button.Size = props.size or UDim2.new(0, 100, 0, 30)
+	button.Position = props.position or UDim2.new(0, 0, 0, 0)
+	button.BackgroundColor3 = props.backgroundColor3 or Color3.fromRGB(60, 60, 60)
+	button.BackgroundTransparency = props.backgroundTransparency or 0
+	button.Text = props.text or "Button"
+	button.TextColor3 = props.textColor3 or Color3.new(1, 1, 1)
+	button.TextSize = props.textSize or 14
+	button.Font = props.font or Enum.Font.SourceSans
+	button.BorderSizePixel = props.borderSizePixel or 0
+	if props.cornerRadius then
+		utils.createCorner(button, props.cornerRadius)
+	end
+	if props.stroke then
+		utils.createStroke(button, props.stroke.color, props.stroke.thickness, props.stroke.transparency)
+	end
+	if props.onClick then
+		button.MouseButton1Click:Connect(props.onClick)
+	end
+	if parent then
+		button.Parent = parent
+	end
+	return button
+end
+
+utils.debounce = function(func, wait)
+	local lastCall = 0
+	return function(...)
+		local now = tick()
+		if now - lastCall >= wait then
+			lastCall = now
+			return func(...)
+		end
+	end
+end
+
+utils.throttle = function(func, limit)
+	local lastRun = 0
+	return function(...)
+		local now = tick()
+		if now - lastRun >= limit then
+			lastRun = now
+			return func(...)
+		end
+	end
+end
+
+utils.connect = function(signal, callback)
+	if not signal or not callback then return nil end
+	local connection = signal:Connect(callback)
+	return {
+		disconnect = function()
+			if connection then
+				connection:Disconnect()
+				connection = nil
+			end
+		end
+	}
+end
+
+utils.colorToRGB = function(color3)
+	return math.floor(color3.R * 255), math.floor(color3.G * 255), math.floor(color3.B * 255)
+end
+
+utils.rgbToColor = function(r, g, b)
+	return Color3.fromRGB(r, g, b)
+end
+
+utils.interpolateColor = function(color1, color2, alpha)
+	alpha = math.clamp(alpha, 0, 1)
+	return Color3.new(
+		color1.R + (color2.R - color1.R) * alpha,
+		color1.G + (color2.G - color1.G) * alpha,
+		color1.B + (color2.B - color1.B) * alpha
+	)
+end
+
+utils.darkenColor = function(color3, amount)
+	amount = amount or 0.2
+	return Color3.new(
+		math.max(0, color3.R - amount),
+		math.max(0, color3.G - amount),
+		math.max(0, color3.B - amount)
+	)
+end
+
+utils.lightenColor = function(color3, amount)
+	amount = amount or 0.2
+	return Color3.new(
+		math.min(1, color3.R + amount),
+		math.min(1, color3.G + amount),
+		math.min(1, color3.B + amount)
+	)
+end
+
+utils.destroyAllChildren = function(parent)
+	if not parent then return end
+	for _, child in ipairs(parent:GetChildren()) do
+		child:Destroy()
+	end
+end
+
+utils.destroy = function(instance)
+	if instance and instance.Destroy then
+		instance:Destroy()
+	end
+end
+
+utils.wait = function(seconds)
+	return RunService.Heartbeat:Wait()
+end
+
+utils.map = function(tbl, func)
+	local result = {}
+	for i, v in ipairs(tbl) do
+		result[i] = func(v, i)
+	end
+	return result
+end
+
+utils.filter = function(tbl, func)
+	local result = {}
+	for i, v in ipairs(tbl) do
+		if func(v, i) then
+			table.insert(result, v)
+		end
+	end
+	return result
+end
+
+utils.find = function(tbl, func)
+	for i, v in ipairs(tbl) do
+		if func(v, i) then
+			return v, i
+		end
+	end
+	return nil
+end
+
+utils.SafeGetGuiLocation = function()
+	local ok, gui = pcall(function()
+		if typeof(gethui) == "function" then
+			return gethui()
+		end
+	end)
+	if ok and typeof(gui) == "Instance" then
+		return gui
+	end
+	local player = Players.LocalPlayer
+	if player then
+		local playerGui = player:FindFirstChildOfClass("PlayerGui")
+		if playerGui then
+			return playerGui
+		end
+	end
+	local coreGui = game:GetService("CoreGui")
+	return coreGui
+end
+
+local Creator = {}
+
+Creator.New = function(className, props)
+	local instance = Instance.new(className)
+	local parent = nil
+	if props then
+		for key, value in pairs(props) do
+			if key == "Parent" then
+				parent = value
+			elseif key == "corner" and type(value) == "table" then
+				local corner = Instance.new("UICorner")
+				if value.r then
+					corner.CornerRadius = UDim.new(0, value.r)
+				end
+				corner.Parent = instance
+			else
+				instance[key] = value
+			end
+		end
+	end
+	if parent then
+		instance.Parent = parent
+	end
+	return instance
+end
+
+utils.Creator = Creator
+
+utils.CreateInstance = function(className, props)
+	return Creator.New(className, props)
+end
+
+return utils
