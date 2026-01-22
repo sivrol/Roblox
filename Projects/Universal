@@ -1,1 +1,892 @@
--- soon
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+local OriginalSpeed = 16
+local OriginalJumpPower = 16
+local Humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+if Humanoid then
+    OriginalSpeed = Humanoid.WalkSpeed
+    OriginalJumpPower = Humanoid.JumpPower
+end
+local TriggerBotEnabled = false
+local AimVelocity = Vector2.new(0, 0)
+local RightMouseDown = false
+local Config = {
+    Combat = {
+        Aimbot = {
+            Enabled = true,
+            FOV = 34,
+            Smoothness = 21 / 100,
+            AimPart = "Head",
+            AimKey = Enum.KeyCode.J,
+            FOVVisual = false,
+            Method = "MouseMove",
+            CameraCFrameSpeed = 0.1,
+            Teamcheck = true,
+            Wallcheck = true,
+            FlickSpeed = 85 / 100,
+        }
+    },
+    Visuals = {
+        Box = {
+            Enabled = true,
+            Color = Color3.fromRGB(255, 0, 0)
+        },
+        Name = {
+            Enabled = true,
+            Color = Color3.fromRGB(255, 0, 0)
+        },
+        Teamcheck = true
+    },
+    PlayerMods = {
+        SpeedBoost = {
+            Enabled = false,
+            Speed = 2
+        },
+        InfiniteJump = {
+            Enabled = false
+        },
+        JumpPower = {
+            Enabled = false,
+            Value = 50
+        },
+        HitboxSize = {
+            Enabled = false,
+            Part = "HeadHB",
+            Scale = 4
+        },
+        Flight = {
+            Enabled = false,
+            Speed = 50,
+            Method = "Velocity",
+            Part = "HumanoidRootPart"
+        }
+    }
+}
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "UntitledPC"
+ScreenGui.Parent = game.CoreGui
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Enabled = true
+
+local FOVVisual = nil
+function CreateFOVVisual()
+    local FOVGui = Instance.new("ScreenGui", ScreenGui)
+    FOVGui.Name = "aimbotfov"
+
+    local FOV = Instance.new("Frame", FOVGui)
+    FOV.BackgroundTransparency = 1
+    FOV.AnchorPoint = Vector2.new(0.5, 0.5)
+
+    local Corner = Instance.new("UICorner", FOV)
+    Corner.CornerRadius = UDim.new(0.5, 0)
+
+    local Stroke = Instance.new("UIStroke", FOV)
+    Stroke.Color = Color3.fromRGB(255, 0, 0)
+    Stroke.Thickness = 2
+    Stroke.Transparency = 0.5
+
+    return FOV
+end
+
+FOVVisual = CreateFOVVisual()
+
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.UserInputType == Enum.UserInputType.MouseButton2 then
+        RightMouseDown = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.UserInputType == Enum.UserInputType.MouseButton2 then
+        RightMouseDown = false
+    end
+end)
+function UpdateFOVCircle()
+    if not FOVVisual then return end
+
+    local MouseLocation = UserInputService:GetMouseLocation()
+    local FOVRad = Config.Combat.Aimbot.FOV
+
+    if RightMouseDown then
+        FOVRad = FOVRad + 32
+    end
+
+    FOVVisual.Position = UDim2.new(0, MouseLocation.X, 0, MouseLocation.Y - game:GetService("GuiService"):GetGuiInset().Y)
+    FOVVisual.Size = UDim2.new(0, FOVRad * 2, 0, FOVRad * 2)
+    FOVVisual.Visible = Config.Combat.Aimbot.FOVVisual
+end
+
+local Luci = loadstring(game:HttpGet("https://pastebin.com/raw/Qmcyx9tn"))()
+
+local Window = Luci.CreateWindow({
+    Title = "Untitled PC",
+    Size = UDim2.new(0, 580, 0, 460)
+})
+
+local CombatSection = Window:CreateTabSection("Combat")
+local VisualsSection = Window:CreateTabSection("Visuals")
+local PlayerModsSection = Window:CreateTabSection("Player Mods")
+
+local CombatTab = CombatSection:CreateTab("Combat")
+local VisualsTab = VisualsSection:CreateTab("Visuals")
+local PlayerModsTab = PlayerModsSection:CreateTab("Player Mods")
+
+local AimbotSection = CombatTab:AddSection("Aimbot Settings")
+
+AimbotSection:AddToggle("Aimbot Enabled", "Enable/disable aimbot", Config.Combat.Aimbot.Enabled, function(Enabled)
+    Config.Combat.Aimbot.Enabled = Enabled
+end)
+
+AimbotSection:AddSlider("FOV Range", "Field of view for aimbot", 20, 300, Config.Combat.Aimbot.FOV, 1, function(Value)
+    Config.Combat.Aimbot.FOV = Value
+end)
+
+AimbotSection:AddDropdown("Aimbot Method", "Choose aiming method", {"MouseMove", "CameraCFrame"}, Config.Combat.Aimbot.Method, function(Selected)
+    Config.Combat.Aimbot.Method = Selected
+end)
+
+AimbotSection:AddSlider("Mouse Aimbot Speed", "Smoothness for mouse movement", 1, 250, Config.Combat.Aimbot.Smoothness * 100, 1, function(Value)
+    Config.Combat.Aimbot.Smoothness = Value / 100
+end)
+
+AimbotSection:AddSlider("Camera Aimbot Speed", "Smoothness for camera movement", 1, 100, Config.Combat.Aimbot.CameraCFrameSpeed * 100, 1, function(Value)
+    Config.Combat.Aimbot.CameraCFrameSpeed = Value / 100
+end)
+
+AimbotSection:AddDropdown("Aim Part", "Body part to aim at", {"Head", "Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, Config.Combat.Aimbot.AimPart, function(Selected)
+    Config.Combat.Aimbot.AimPart = Selected
+end)
+
+AimbotSection:AddToggle("FOV Visual", "Show FOV circle", Config.Combat.Aimbot.FOVVisual, function(Enabled)
+    Config.Combat.Aimbot.FOVVisual = Enabled
+end)
+
+AimbotSection:AddToggle("Team Check", "Check team before aiming", Config.Combat.Aimbot.Teamcheck, function(Enabled)
+    Config.Combat.Aimbot.Teamcheck = Enabled
+end)
+
+AimbotSection:AddToggle("Wall Check", "Check for walls before aiming", Config.Combat.Aimbot.Wallcheck, function(Enabled)
+    Config.Combat.Aimbot.Wallcheck = Enabled
+end)
+
+AimbotSection:AddSlider("Flick Speed", "Speed for quick aim snaps", 1, 250, Config.Combat.Aimbot.FlickSpeed * 100, 1, function(Value)
+    Config.Combat.Aimbot.FlickSpeed = Value / 100
+end)
+
+local HitboxSection = CombatTab:AddSection("Hitbox Settings")
+
+HitboxSection:AddToggle("Hitbox Expander", "Enable hitbox size modification", Config.PlayerMods.HitboxSize.Enabled, function(State)
+    Config.PlayerMods.HitboxSize.Enabled = State
+    UpdateHitboxSize()
+end)
+
+HitboxSection:AddSlider("Hitbox Scale", "Size multiplier for hitboxes", 1, 50, Config.PlayerMods.HitboxSize.Scale, 1, function(Value)
+    Config.PlayerMods.HitboxSize.Scale = Value
+    UpdateHitboxSize()
+end)
+
+HitboxSection:AddDropdown("Hitbox Parts", "Body part to expand", {"HeadHB", "Torso", "Head", "UpperTorso", "LowerTorso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}, Config.PlayerMods.HitboxSize.Part, function(Selected)
+    Config.PlayerMods.HitboxSize.Part = Selected
+    UpdateHitboxSize()
+end)
+
+local ESPSection = VisualsTab:AddSection("ESP Settings")
+
+ESPSection:AddToggle("Player Boxes", "Show bounding boxes around players", Config.Visuals.Box.Enabled, function(Enabled)
+    Config.Visuals.Box.Enabled = Enabled
+end)
+
+ESPSection:AddToggle("Player Names", "Show player names above heads", Config.Visuals.Name.Enabled, function(Enabled)
+    Config.Visuals.Name.Enabled = Enabled
+end)
+
+ESPSection:AddToggle("Team Colors", "Use team colors for ESP", Config.Visuals.Teamcheck, function(Enabled)
+    Config.Visuals.Teamcheck = Enabled
+end)
+
+local SpeedSection = PlayerModsTab:AddSection("Movement Settings")
+
+SpeedSection:AddToggle("Speed Boost", "Enable speed boost", Config.PlayerMods.SpeedBoost.Enabled, function(Enabled)
+    Config.PlayerMods.SpeedBoost.Enabled = Enabled
+end)
+
+SpeedSection:AddSlider("Walk Speed", "Movement speed multiplier", 5, 300, OriginalSpeed, 1, function(Value)
+    Config.PlayerMods.SpeedBoost.Speed = Value
+end)
+
+local JumpSection = PlayerModsTab:AddSection("Jump Settings")
+
+JumpSection:AddToggle("Infinite Jump", "Jump anytime, anywhere", Config.PlayerMods.InfiniteJump.Enabled, function(Enabled)
+    Config.PlayerMods.InfiniteJump.Enabled = Enabled
+end)
+
+JumpSection:AddToggle("Custom Jump Power", "Set custom jump height", Config.PlayerMods.JumpPower.Enabled, function(Enabled)
+    Config.PlayerMods.JumpPower.Enabled = Enabled
+end)
+
+JumpSection:AddSlider("Jump Power", "Jump height multiplier", 2, 200, OriginalJumpPower, 1, function(Value)
+    Config.PlayerMods.JumpPower.Value = Value
+end)
+
+local FlightSection = PlayerModsTab:AddSection("Flight Settings")
+
+FlightSection:AddToggle("Flight", "Enable noclip flight", Config.PlayerMods.Flight.Enabled, function(Enabled)
+    Config.PlayerMods.Flight.Enabled = Enabled
+end)
+
+FlightSection:AddSlider("Flight Speed", "Flight movement speed", 5, 200, Config.PlayerMods.Flight.Speed, 1, function(Value)
+    Config.PlayerMods.Flight.Speed = Value
+end)
+
+FlightSection:AddDropdown("Flight Method", "Physics method for flight", {"Velocity", "CFrame"}, Config.PlayerMods.Flight.Method, function(Selected)
+    Config.PlayerMods.Flight.Method = Selected
+end)
+
+FlightSection:AddDropdown("Flight Part", "Body part to apply flight to", {"HumanoidRootPart", "Torso", "UpperTorso", "LowerTorso"}, Config.PlayerMods.Flight.Part, function(Selected)
+    Config.PlayerMods.Flight.Part = Selected
+end)
+
+function UpdateHitboxSize()
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player.Character and Player ~= LocalPlayer then
+            local Part = Player.Character:FindFirstChild(Config.PlayerMods.HitboxSize.Part)
+            if Part then
+                local Size = Config.PlayerMods.HitboxSize.Enabled and Config.PlayerMods.HitboxSize.Scale or 1.45
+                Part.Massless = true
+                Part.CanCollide = false
+                Part.Transparency = 1
+                Part.Size = Vector3.new(Size, Size, Size)
+            end
+        end
+    end
+end
+
+local function IsFullyTransparent(part)
+    return typeof(part) == "Instance" and part:IsA("BasePart") and part.Transparency >= 1
+end
+
+local function CanSeeTargetIgnoringTransparent(origin, targetPosition, targetCharacter)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+
+    local currentOrigin = origin
+    local direction = (targetPosition - currentOrigin)
+    local attempts = 12
+
+    while attempts > 0 do
+        local result = workspace:Raycast(currentOrigin, direction, params)
+        if not result then
+            return true
+        end
+
+        local hit = result.Instance
+        if hit and hit:IsDescendantOf(targetCharacter) then
+            return true
+        end
+
+        if hit and IsFullyTransparent(hit) then
+            table.insert(params.FilterDescendantsInstances, hit)
+            local dirUnit = direction.Unit
+            currentOrigin = result.Position + dirUnit * 0.01
+            direction = (targetPosition - currentOrigin)
+            attempts = attempts - 1
+        else
+            return false
+        end
+    end
+
+    return false
+end
+
+local function RaycastFirstOpaqueHit(origin, direction, blacklist)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = blacklist or {}
+
+    local currentOrigin = origin
+    local currentDirection = direction
+    local attempts = 12
+
+    while attempts > 0 do
+        local result = workspace:Raycast(currentOrigin, currentDirection, params)
+        if not result then
+            return nil
+        end
+
+        local hit = result.Instance
+        if hit and IsFullyTransparent(hit) then
+            table.insert(params.FilterDescendantsInstances, hit)
+            local dirUnit = currentDirection.Unit
+            currentOrigin = result.Position + dirUnit * 0.01
+            currentDirection = (origin + direction - currentOrigin)
+            attempts = attempts - 1
+        else
+            return result
+        end
+    end
+
+    return nil
+end
+
+function GetNearestPlayerToMouse(AimPart)
+    local MousePos = UserInputService:GetMouseLocation()
+    local NearestPlayer = nil
+    local ShortestDist = math.huge
+
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player == LocalPlayer or not Player.Character then continue end
+
+        local Humanoid = Player.Character:FindFirstChild("Humanoid")
+        local TargetPart = Player.Character:FindFirstChild(AimPart)
+
+        if not Humanoid or Humanoid.Health <= 0 or not TargetPart then continue end
+        if Config.Combat.Aimbot.Teamcheck and OnTeam(Player) then continue end
+
+        local ScreenPos, OnScreen = Camera:WorldToViewportPoint(TargetPart.Position)
+        if not OnScreen then continue end
+
+        local Dist = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos).Magnitude
+        if Dist >= Config.Combat.Aimbot.FOV or Dist >= ShortestDist then continue end
+
+        if Config.Combat.Aimbot.Wallcheck then
+            local CameraPos = Camera.CFrame.Position
+            if not CanSeeTargetIgnoringTransparent(CameraPos, TargetPart.Position, Player.Character) then
+                continue
+            end
+        end
+
+        ShortestDist = Dist
+        NearestPlayer = Player
+    end
+
+    return NearestPlayer
+end
+
+local function Aimbot()
+    if not UserInputService:IsKeyDown(Config.Combat.Aimbot.AimKey) then
+        AimVelocity = AimVelocity * 0.8
+        return
+    end
+
+    local TargetPlayer = GetNearestPlayerToMouse(Config.Combat.Aimbot.AimPart)
+    if not TargetPlayer or not TargetPlayer.Character then return end
+
+    local TargetPart = TargetPlayer.Character:FindFirstChild(Config.Combat.Aimbot.AimPart)
+    if not TargetPart then return end
+
+    local TargetPosition = TargetPart.Position
+    local Distance = (Camera.CFrame.Position - TargetPosition).Magnitude
+
+    if Config.Combat.Aimbot.Method == "MouseMove" then
+        PerformMouseAimbot(TargetPosition, Distance)
+    elseif Config.Combat.Aimbot.Method == "CameraCFrame" then
+        PerformCameraAimbot(TargetPosition, Distance)
+    end
+end
+
+function PerformMouseAimbot(TargetPosition, Distance)
+    local ScreenPos = Camera:WorldToViewportPoint(TargetPosition)
+    local MousePos = UserInputService:GetMouseLocation()
+    local RawDelta = Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos
+
+    local Smoothness = Config.Combat.Aimbot.Smoothness
+    if Distance <= 10 then
+        Smoothness = Smoothness + 0.015
+    elseif Distance <= 22.5 then
+    elseif Distance <= 47 then
+        Smoothness = Smoothness + (math.floor((Distance - 22.5) / 1.5) * 0.005)
+    end
+
+    AimVelocity = AimVelocity * 0.7 + RawDelta * 0.3
+    local VelocityInfluence = AimVelocity * 0.2
+    local FinalDelta = RawDelta * Smoothness + VelocityInfluence
+
+    if mousemoverel then
+        mousemoverel(FinalDelta.X, FinalDelta.Y)
+    else
+        warn("mousemoverel function not available")
+    end
+end
+
+function PerformCameraAimbot(TargetPosition, Distance)
+    local TargetCFrame = CFrame.new(Camera.CFrame.Position, TargetPosition)
+    local LerpSpeed = Config.Combat.Aimbot.CameraCFrameSpeed
+
+    if Distance <= 10 then
+        LerpSpeed = LerpSpeed + 0.015
+    elseif Distance <= 22.5 then
+    elseif Distance <= 47 then
+        LerpSpeed = LerpSpeed + (math.floor((Distance - 22.5) / 1.5) * 0.005)
+    end
+
+    Camera.CFrame = Camera.CFrame:Lerp(TargetCFrame, LerpSpeed)
+end
+
+local function GetNearestPlayerForFlick()
+    local MousePos = UserInputService:GetMouseLocation()
+    local NearestPlayer = nil
+    local ShortestDist = math.huge
+
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player == LocalPlayer or not Player.Character then continue end
+
+        local Humanoid = Player.Character:FindFirstChild("Humanoid")
+        local Head = Player.Character:FindFirstChild("Head")
+
+        if not Humanoid or Humanoid.Health <= 0 or not Head then continue end
+        if Config.Combat.Aimbot.Teamcheck and OnTeam(Player) then continue end
+
+        local ScreenPos, OnScreen = Camera:WorldToViewportPoint(Head.Position)
+        if not OnScreen then continue end
+
+        local Dist = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos).Magnitude
+        if Dist >= 500 or Dist >= ShortestDist then continue end
+
+        if Config.Combat.Aimbot.Wallcheck then
+            local CameraPos = Camera.CFrame.Position
+            if not CanSeeTargetIgnoringTransparent(CameraPos, Head.Position, Player.Character) then
+                continue
+            end
+        end
+
+        ShortestDist = Dist
+        NearestPlayer = Player
+    end
+
+    return NearestPlayer
+end
+
+local function FlickToHead()
+    local TargetPlayer = GetNearestPlayerForFlick()
+    if not TargetPlayer or not TargetPlayer.Character then return end
+
+    local Head = TargetPlayer.Character:FindFirstChild("Head")
+    if not Head then return end
+
+    local HeadSize = Head.Size
+    local HeadCFrame = Head.CFrame
+
+    local RandomOffsetX = (math.random() - 0.5) * HeadSize.X * 0.6
+    local RandomOffsetY = (math.random() - 0.5) * HeadSize.Y * 0.6
+    local RandomOffsetZ = (math.random() - 0.5) * HeadSize.Z * 0.6
+
+    local RandomHeadPos = HeadCFrame.Position +
+        HeadCFrame.RightVector * RandomOffsetX +
+        HeadCFrame.UpVector * RandomOffsetY +
+        HeadCFrame.LookVector * RandomOffsetZ
+
+    local ScreenPos = Camera:WorldToViewportPoint(RandomHeadPos)
+    local MousePos = UserInputService:GetMouseLocation()
+    local Delta = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos) * Config.Combat.Aimbot.FlickSpeed
+
+    if mousemoverel then
+        mousemoverel(Delta.X, Delta.Y)
+    end
+
+    AimVelocity = Delta * 0.5
+end
+
+local resetSpeedDone = false
+
+function SpeedBoost()
+    local Character = LocalPlayer.Character
+    if not Character then return end
+
+    local Humanoid = Character:FindFirstChild("Humanoid")
+    if not Humanoid then return end
+
+    if Config.PlayerMods.SpeedBoost.Enabled then
+        Humanoid.WalkSpeed = Config.PlayerMods.SpeedBoost.Speed
+        resetSpeedDone = false
+    elseif not resetSpeedDone then
+        Humanoid.WalkSpeed = OriginalSpeed
+        resetSpeedDone = true
+    end
+end
+
+function InfiniteJump()
+    local Character = LocalPlayer.Character
+    if not Character or not Config.PlayerMods.InfiniteJump.Enabled then return end
+
+    local Humanoid = Character:FindFirstChild("Humanoid")
+    if Humanoid and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end
+
+function JumpPower()
+    local Character = LocalPlayer.Character
+    if not Character then return end
+
+    local Humanoid = Character:FindFirstChild("Humanoid")
+    if not Humanoid then return end
+
+    if Config.PlayerMods.JumpPower.Enabled then
+        Humanoid.JumpPower = Config.PlayerMods.JumpPower.Value
+    else
+        Humanoid.JumpPower = OriginalJumpPower
+    end
+end
+
+function Fly()
+    if not Config.PlayerMods.Flight.Enabled or not LocalPlayer.Character then return end
+
+    local FlyPart = LocalPlayer.Character:FindFirstChild(Config.PlayerMods.Flight.Part)
+    if not FlyPart then return end
+
+    local MoveDirection = GetFlightDirection()
+    local FlightSpeed = Config.PlayerMods.Flight.Speed
+
+    if MoveDirection.Magnitude > 0 then
+        MoveDirection = MoveDirection.Unit * FlightSpeed
+    end
+
+    if Config.PlayerMods.Flight.Method == "Velocity" then
+        ApplyVelocityFlight(FlyPart, MoveDirection)
+    elseif Config.PlayerMods.Flight.Method == "CFrame" then
+        ApplyCFrameFlight(FlyPart, MoveDirection)
+    end
+end
+
+function GetFlightDirection()
+    local Camera = workspace.CurrentCamera
+    local MoveDirection = Vector3.new(0, 0, 0)
+
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+        MoveDirection = MoveDirection + Camera.CFrame.LookVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+        MoveDirection = MoveDirection - Camera.CFrame.LookVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+        MoveDirection = MoveDirection - Camera.CFrame.RightVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+        MoveDirection = MoveDirection + Camera.CFrame.RightVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        MoveDirection = MoveDirection + Vector3.new(0, 1, 0)
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        MoveDirection = MoveDirection + Vector3.new(0, -1, 0)
+    end
+
+    return MoveDirection
+end
+
+function ApplyVelocityFlight(FlyPart, MoveDirection)
+    if FlyPart:IsA("BasePart") then
+        if FlyPart:FindFirstChild("BodyVelocity") then
+            FlyPart.BodyVelocity.Velocity = MoveDirection
+        elseif FlyPart:FindFirstChild("BodyPosition") then
+            local BodyPos = FlyPart.BodyPosition
+            if MoveDirection.Magnitude > 0 then
+                BodyPos.Position = FlyPart.Position + MoveDirection * 0.016
+            else
+                BodyPos.Position = FlyPart.Position
+            end
+        else
+            local BodyVel = Instance.new("BodyVelocity")
+            BodyVel.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+            BodyVel.Velocity = MoveDirection
+            BodyVel.Parent = FlyPart
+
+            task.delay(0.1, function()
+                if BodyVel and BodyVel.Parent then
+                    BodyVel:Destroy()
+                end
+            end)
+        end
+    elseif FlyPart:IsA("Model") and FlyPart.PrimaryPart then
+        local PrimaryPart = FlyPart.PrimaryPart
+        if PrimaryPart:FindFirstChild("BodyVelocity") then
+            PrimaryPart.BodyVelocity.Velocity = MoveDirection
+        else
+            local BodyVel = Instance.new("BodyVelocity")
+            BodyVel.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+            BodyVel.Velocity = MoveDirection
+            BodyVel.Parent = PrimaryPart
+
+            task.delay(0.1, function()
+                if BodyVel and BodyVel.Parent then
+                    BodyVel:Destroy()
+                end
+            end)
+        end
+    end
+end
+
+function ApplyCFrameFlight(FlyPart, MoveDirection)
+    if FlyPart:IsA("BasePart") then
+        if MoveDirection.Magnitude > 0 then
+            FlyPart.CFrame = FlyPart.CFrame + MoveDirection * 0.016
+        end
+    elseif FlyPart:IsA("Model") and FlyPart.PrimaryPart then
+        if MoveDirection.Magnitude > 0 then
+            FlyPart.PrimaryPart.CFrame = FlyPart.PrimaryPart.CFrame + MoveDirection * 0.016
+        end
+    end
+end
+
+function OnTeam(Player)
+    if Player.Team and LocalPlayer.Team then
+        return Player.Team == LocalPlayer.Team
+    end
+    return false
+end
+
+function CreateBoxESP(Character)
+    if not Character:FindFirstChild("Torso") and not Character:FindFirstChild("UpperTorso") then return end
+
+    local Player = Players:GetPlayerFromCharacter(Character)
+    if not Player or Player == LocalPlayer then return end
+
+    local TeamColor = OnTeam(Player) and Color3.new(0, 0, 1) or Color3.new(1, 0, 0)
+    if not Config.Visuals.Teamcheck then
+        TeamColor = Config.Visuals.Box.Color
+    end
+
+    local Existing = Character:FindFirstChild("plrboxesp")
+    if Existing then
+        local Stroke = Existing:FindFirstChild("Frame") and Existing.Frame:FindFirstChild("UIStroke")
+        if Stroke then Stroke.Color = TeamColor end
+        return
+    end
+
+    local BGui = Instance.new("BillboardGui", Character)
+    BGui.Name = "plrboxesp"
+    BGui.Adornee = Character:FindFirstChild("Torso") or Character.PrimaryPart
+    BGui.Size = UDim2.new(4, 0, 5, 0)
+    BGui.StudsOffset = Vector3.new(0, 0.4, 0)
+    BGui.AlwaysOnTop = true
+
+    local Box = Instance.new("Frame", BGui)
+    Box.BackgroundTransparency = 1
+    Box.Size = UDim2.new(1, 0, 1, 0)
+
+    local BoxStroke = Instance.new("UIStroke", Box)
+    BoxStroke.Thickness = 2
+    BoxStroke.Transparency = 0.39
+    BoxStroke.Color = TeamColor
+end
+
+function CreateNameESP(Head)
+    local Player = Players:GetPlayerFromCharacter(Head.Parent)
+    if not Player or Player == LocalPlayer then return end
+
+    local TeamColor = OnTeam(Player) and Color3.new(0, 0, 1) or Color3.new(1, 0, 0)
+    if not Config.Visuals.Teamcheck then
+        TeamColor = Config.Visuals.Name.Color
+    end
+
+    local Existing = Head:FindFirstChild("nameespbgui")
+    if Existing then
+        local NameLabel = Existing:FindFirstChild("nameesptl")
+        if NameLabel then NameLabel.TextColor3 = TeamColor end
+        return
+    end
+
+    local BGui = Instance.new("BillboardGui")
+    BGui.Name = "nameespbgui"
+    BGui.Adornee = Head
+    BGui.AlwaysOnTop = true
+    BGui.ExtentsOffset = Vector3.new(0, 4, 0)
+    BGui.Size = UDim2.new(0, 200, 0, 20)
+    BGui.Parent = Head
+
+    local NameLabel = Instance.new("TextLabel", BGui)
+    NameLabel.Size = UDim2.new(1, 0, 0.3, 0)
+    NameLabel.Name = "nameesptl"
+    NameLabel.BorderSizePixel = 0
+    NameLabel.BackgroundTransparency = 1
+    NameLabel.Text = Player.Name:upper()
+    NameLabel.TextColor3 = TeamColor
+    NameLabel.TextStrokeTransparency = 0.3
+    NameLabel.Font = Enum.Font.GothamBold
+    NameLabel.TextSize = 14
+end
+
+local LastESPUpdateTime = 0
+function UpdateESP()
+    local CurrentTime = tick()
+    if CurrentTime - LastESPUpdateTime < 1.5 then return end
+
+    for _, Player in pairs(Players:GetPlayers()) do
+        if not Player.Character or Player == LocalPlayer then continue end
+
+        if Config.Visuals.Box.Enabled then
+            CreateBoxESP(Player.Character)
+        else
+            local BoxESP = Player.Character:FindFirstChild("plrboxesp")
+            if BoxESP then BoxESP:Destroy() end
+        end
+
+        if Config.Visuals.Name.Enabled and Player.Character:FindFirstChild("Head") then
+            CreateNameESP(Player.Character.Head)
+        else
+            local Head = Player.Character:FindFirstChild("Head")
+            if Head then
+                local NameESP = Head:FindFirstChild("nameespbgui")
+                if NameESP then NameESP:Destroy() end
+            end
+        end
+    end
+
+    LastESPUpdateTime = CurrentTime
+end
+
+local LastInputTime = 0
+local InputCooldown = 1.5
+
+function ToggleMenu()
+    local CurrentTime = tick()
+    if CurrentTime - LastInputTime < InputCooldown then return end
+    LastInputTime = CurrentTime
+    if Window.ScreenGui then
+        Window.ScreenGui.Enabled = not Window.ScreenGui.Enabled
+    end
+end
+
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.KeyCode == Enum.KeyCode.V then
+        ToggleMenu()
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(Player)
+    if Player.Character then
+        local BoxESP = Player.Character:FindFirstChild("plrboxesp")
+        local NameESP = Player.Character:FindFirstChild("Head") and Player.Character.Head:FindFirstChild("nameespbgui")
+
+        if BoxESP then BoxESP:Destroy() end
+        if NameESP then NameESP:Destroy() end
+    end
+end)
+
+Players.PlayerAdded:Connect(function(Player)
+    Player.CharacterRemoving:Connect(function(Character)
+        local BoxESP = Character:FindFirstChild("plrboxesp")
+        local NameESP = Character:FindFirstChild("Head") and Character.Head:FindFirstChild("nameespbgui")
+
+        if BoxESP then BoxESP:Destroy() end
+        if NameESP then NameESP:Destroy() end
+    end)
+end)
+
+for _, Player in ipairs(Players:GetPlayers()) do
+    if Player ~= LocalPlayer then
+        Player.CharacterAdded:Connect(function(Character)
+            task.wait(0.1)
+            UpdateHitboxSize()
+        end)
+
+        if Player.Character then
+            UpdateHitboxSize()
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(Player)
+    if Player ~= LocalPlayer then
+        Player.CharacterAdded:Connect(function(Character)
+            task.wait(0.1)
+            UpdateHitboxSize()
+        end)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    UpdateESP()
+    if Config.Combat.Aimbot.Enabled then
+        Aimbot()
+        if Config.Combat.Aimbot.FOVVisual then
+            UpdateFOVCircle()
+        end
+    else
+        if FOVVisual.Visible then
+            FOVVisual.Visible = false
+        end
+    end
+    if not Config.Combat.Aimbot.FOVVisual then
+        FOVVisual.Visible = false
+    end
+    SpeedBoost()
+    InfiniteJump()
+    JumpPower()
+    Fly()
+end)
+
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+
+    if Input.KeyCode == Enum.KeyCode.T then
+        TriggerBotEnabled = not TriggerBotEnabled
+    elseif Input.KeyCode == Enum.KeyCode.K then
+        FlickToHead()
+    end
+end)
+
+local function TriggerBot()
+    if not TriggerBotEnabled then return end
+
+    local Mouse = LocalPlayer:GetMouse()
+    if not Mouse.Target or not Mouse.Target.Parent then return end
+
+    local TargetCharacter = Mouse.Target.Parent
+    if not TargetCharacter:FindFirstChild("Humanoid") then return end
+
+    local TargetPlayer = Players:GetPlayerFromCharacter(TargetCharacter)
+    if not TargetPlayer or TargetPlayer == LocalPlayer then return end
+
+    if Config.Combat.Aimbot.Teamcheck and OnTeam(TargetPlayer) then return end
+
+    local Humanoid = TargetCharacter:FindFirstChild("Humanoid")
+    if not Humanoid or Humanoid.Health <= 0 then return end
+
+    local TargetPart = TargetCharacter:FindFirstChild("Head") or TargetCharacter:FindFirstChild("HumanoidRootPart")
+    if TargetPart then
+        local CanSee = CanSeeTargetIgnoringTransparent(Camera.CFrame.Position, TargetPart.Position, TargetCharacter)
+        if not CanSee then return end
+    end
+
+    task.wait(math.random(0.4, 0.48))
+    mouse1press()
+    task.wait(0.01)
+    mouse1release()
+end
+
+RunService.Heartbeat:Connect(function()
+    UpdateESP()
+    if Config.Combat.Aimbot.Enabled then
+        Aimbot()
+        if Config.Combat.Aimbot.FOVVisual then
+            UpdateFOVCircle()
+        end
+    else
+        if FOVVisual and FOVVisual.Visible then
+            FOVVisual.Visible = false
+        end
+    end
+
+    SpeedBoost()
+    InfiniteJump()
+    JumpPower()
+    Fly()
+    TriggerBot()
+end)
+
+if Window.CloseButton then
+    Window.CloseButton.MouseButton1Click:Connect(function()
+        if Window.ScreenGui then
+            Window.ScreenGui:Destroy()
+        end
+    end)
+end
